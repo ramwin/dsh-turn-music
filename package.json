@@ -1,0 +1,67 @@
+{
+  "name": "dsh-turn-music",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 回合提醒音乐插件：对话（回合）结束时自动播放音乐提醒你回来，可在设置里开关、自定义音乐路径或上传音频，内置电话「叮铃铃」铃声；浮标可随时暂停。Turn-finished music reminder for DSH Web — enable in Settings, point at any local audio file or upload one, bundled telephone ringtone, pausable from an in-page chip.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "assets/ringtone.mp3",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "dsh-web",
+    "turn-end",
+    "reminder",
+    "ringtone",
+    "notification-sound",
+    "music",
+    "audio",
+    "回合提醒",
+    "提醒音乐",
+    "对话结束提醒",
+    "铃声",
+    "提示音"
+  ],
+  "author": {
+    "name": "ramwin",
+    "email": "ramwin@qq.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ramwin/dsh-turn-music.git"
+  },
+  "homepage": "https://github.com/ramwin/dsh-turn-music#readme",
+  "bugs": {
+    "url": "https://github.com/ramwin/dsh-turn-music/issues"
+  }
+}

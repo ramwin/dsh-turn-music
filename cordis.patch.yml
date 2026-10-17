@@ -1,0 +1,22 @@
+# dsh-turn-music bundle patch: inserts the dual-face plugin row into the web
+# profile roster. The node half (exports ".") owns config + audio streaming; the
+# `dsh.client` declaration in package.json loads the browser half (exports
+# "./client") into the Web GUI, where the turn-finished edge is observable.
+#
+# Everything below `config` is a *deployment default* — the settings page in the
+# GUI still overrides it per user, and "reset" falls back to these values.
+# Uncomment and edit to make a deployment-wide choice (for example a shared
+# ringtone file on a server you administer):
+#
+# - insert:
+#     - id: turn-music
+#       name: 'dsh-turn-music'
+#       config:
+#         enabled: true
+#         file: /srv/sounds/ring.mp3
+#         volume: 80
+#         loop: true
+#         maxSeconds: 120
+- insert:
+    - id: turn-music
+      name: 'dsh-turn-music'
