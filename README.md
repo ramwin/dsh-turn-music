@@ -1,5 +1,9 @@
 # dsh-turn-music
 
+[![npm](https://img.shields.io/npm/v/dsh-turn-music?logo=npm&color=cb3837)](https://www.npmjs.com/package/dsh-turn-music)
+[![license](https://img.shields.io/npm/l/dsh-turn-music?color=blue)](LICENSE)
+[![dsh-plugin](https://img.shields.io/badge/DSH-plugin-4d6bfe)](https://github.com/topics/dsh-plugin)
+
 > DeepSeek Harness 的**回合提醒音乐**：对话（回合）结束时自动响起音乐，把离开屏幕的你叫回来。内置电话「叮铃铃」铃声，可在设置里开关、改路径或直接上传音频，右下角浮标随时暂停。
 
 > Turn-finished music reminder for DeepSeek Harness Web: a chime/ringtone (bundled telephone ring, or any local audio file, or an upload) plays when the agent finishes a turn, with an in-page chip to pause/dismiss.
