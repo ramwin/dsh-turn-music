@@ -40,6 +40,12 @@ test('sanitize 拒绝非音频扩展名，接受空路径（回到默认铃声�
   assert.equal(cleared.value.file, '')
 })
 
+test('sanitize 保留 1% 步进的音量精度', () => {
+  const { value, errors } = sanitize({ volume: 37 })
+  assert.deepEqual(errors, [])
+  assert.equal(value.volume, 37)
+})
+
 test('resolveAudio 在自定义文件不可用时回退到内置铃声', () => {
   const fallback = resolveAudio({ file: '/definitely/missing.mp3' })
   assert.equal(fallback.source, 'bundled')
