@@ -23,7 +23,10 @@ function fakeElement(tag) {
     style: { cssText: '' },
     children: [],
     textContent: '',
-    setAttribute() {},
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value)
+    },
     appendChild(child) {
       this.children.push(child)
       return child
@@ -83,6 +86,7 @@ function loadClient(overrides) {
   const plays = []
   const pauses = []
   const audios = []
+  const managed = []
   let captured = null
   let storeSubscribe = null
   let storeSnapshot = { byId: {} }
@@ -94,6 +98,8 @@ function loadClient(overrides) {
       this.src = ''
       this.loop = false
       this.volume = 1
+      this.currentTime = 0
+      this.paused = true
       this.listeners = {}
       audios.push(this)
     }
@@ -101,11 +107,13 @@ function loadClient(overrides) {
       this.listeners[type] = fn
     }
     play() {
-      plays.push({ src: this.src, loop: this.loop, volume: this.volume })
+      this.paused = false
+      plays.push({ src: this.src, loop: this.loop, volume: this.volume, currentTime: this.currentTime })
       return Promise.resolve()
     }
     pause() {
-      pauses.push(this.src)
+      this.paused = true
+      pauses.push({ src: this.src, currentTime: this.currentTime })
     }
   }
 
@@ -118,7 +126,12 @@ function loadClient(overrides) {
   }
   const document = {
     createElement: fakeElement,
-    body: { appendChild() {} },
+    body: {
+      appendChild(child) {
+        managed.push(child)
+        return child
+      },
+    },
     addEventListener() {},
     removeEventListener() {},
   }
@@ -195,12 +208,23 @@ function loadClient(overrides) {
     audios,
     effects,
     clock,
+    /** The reminder chip, once `apply()` created it. */
+    chip() {
+      return managed.find((element) => element.attributes['data-dsh-turn-music-chip'] !== undefined) || null
+    },
     /** Push a new session-list snapshot into the watcher. */
     update(next) {
       storeSnapshot = next
       if (storeSubscribe) storeSubscribe()
     },
   }
+}
+
+/** The chip's ▶/⏸ button (dot, label, toggle, close). */
+function toggleButton(harness) {
+  const chip = harness.chip()
+  assert.ok(chip, 'chip should exist after apply()')
+  return chip.children.find((child) => child.tagName === 'button')
 }
 
 /** One Team lead plus one teammate, as the browser session list sees them. */
@@ -273,6 +297,33 @@ test('起播 1 秒渐强：从静音升到配置音量', async () => {
   assert.ok(audio.volume > 0.2 && audio.volume < 0.5, `半程应在渐强中间，实际 ${audio.volume}`)
   harness.clock.advance(600)
   assert.equal(audio.volume, 0.7, '一秒后到达配置音量')
+})
+
+test('暂停 1 秒渐弱后停下，并记住位置；继续从暂停处播放', async () => {
+  const harness = loadClient({})
+  await settle()
+  harness.update({ byId: { s1: { running: true } } })
+  harness.update({ byId: { s1: { running: false } } })
+  harness.clock.advance(1100)
+
+  const audio = harness.audios[0]
+  assert.equal(audio.volume, 0.7)
+  const toggle = toggleButton(harness)
+
+  audio.currentTime = 4.2
+  toggle.onclick()
+  assert.equal(harness.pauses.length, 0, '渐弱期间不应立刻硬切')
+  assert.equal(harness.chip().children[1].textContent, '已暂停')
+
+  harness.clock.advance(1100)
+  assert.equal(harness.pauses.length, 1, '渐弱结束后才真正暂停')
+  assert.equal(audio.volume, 0)
+
+  toggle.onclick()
+  assert.equal(harness.plays.length, 2)
+  assert.equal(harness.plays[1].currentTime, 4.2, '从暂停的位置继续')
+  harness.clock.advance(1100)
+  assert.equal(audio.volume, 0.7, '继续时同样渐强')
 })
 
 test('子代理会话默认静音，父会话照常响', async () => {
