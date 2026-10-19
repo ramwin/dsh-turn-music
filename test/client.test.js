@@ -81,8 +81,10 @@ function makeClock() {
 /**
  * Load the bundle and return a harness.
  * @param overrides - host config the fake `/config` endpoint answers with.
+ * @param teams - `@nanmicoder/dsh-agent-teams` snapshots, or null when that
+ *   plugin (and therefore its state route) is absent.
  */
-function loadClient(overrides) {
+function loadClient(overrides, teams = null) {
   const plays = []
   const pauses = []
   const audios = []
@@ -170,7 +172,11 @@ function loadClient(overrides) {
     'console',
     SOURCE,
   )
-  const fetchFake = async () => {
+  const fetchFake = async (url) => {
+    if (url === '/plugins/dsh-agent-teams/state') {
+      if (teams === null) return { ok: false, status: 404, json: async () => ({}) }
+      return { ok: true, status: 200, json: async () => ({ teams }) }
+    }
     return {
       ok: true,
       status: 200,
@@ -336,6 +342,92 @@ test('子代理会话默认静音，父会话照常响', async () => {
 
   harness.update({ byId: { child: { running: false, origin: 'subagent' }, parent: { running: false } } })
   assert.equal(harness.plays.length, 1, '父会话结束应当响')
+})
+
+test('团队子任务完成不响，即使关掉「忽略子代理」', async () => {
+  const harness = loadClient({ muteSubagent: false })
+  await settle()
+
+  // baseline: lead 与 teammate 都在跑
+  harness.update(teamSnapshot({ leadRunning: true, teammateRunning: true }))
+  // lead 让出回合，teammate 还在跑
+  harness.update(teamSnapshot({ leadRunning: false, teammateRunning: true }))
+  assert.equal(harness.plays.length, 0, '团队仍在工作时 lead 的让出不是“完成”')
+
+  // teammate 完成
+  harness.update(teamSnapshot({ leadRunning: false, teammateRunning: false }))
+  assert.equal(harness.plays.length, 0, '子任务完成不应响')
+})
+
+test('团队整体完成（任务收尾、成员空闲）后 lead 结束才响', async () => {
+  const harness = loadClient({ muteSubagent: false })
+  await settle()
+
+  harness.update(teamSnapshot({ leadRunning: true, tasks: [teamTask('in_progress')] }))
+  harness.update(teamSnapshot({ leadRunning: false, tasks: [teamTask('in_progress')] }))
+  assert.equal(harness.plays.length, 0, '还有进行中的任务，不响')
+
+  harness.update(teamSnapshot({ leadRunning: true, tasks: [teamTask('completed')] }))
+  harness.update(teamSnapshot({ leadRunning: false, tasks: [teamTask('completed')] }))
+  assert.equal(harness.plays.length, 1, '整体完成才响')
+})
+
+/**
+ * One `@nanmicoder/dsh-agent-teams` live snapshot (see the plugin's
+ * `/plugins/dsh-agent-teams/state` route).
+ */
+function teamsSnapshot(options) {
+  return {
+    teamId: 'team1',
+    captainSessionId: 'lead',
+    phase: options.phase || 'running',
+    ...(options.halted ? { halted: true } : {}),
+    members: [{ id: 'w1', name: 'w1', activity: options.working ? 'working' : 'idle' }],
+    tasks: options.tasks || [],
+  }
+}
+
+test('第三方 Agent Teams：Lead 让出回合不响，子任务完成不响，整体收尾才响', async () => {
+  const running = loadClient({ muteSubagent: false }, [
+    teamsSnapshot({ tasks: [teamTask('in_progress')], working: true }),
+  ])
+  await settle()
+
+  running.update({ byId: { lead: { running: true }, w1: { running: true, origin: 'subagent', parentId: 'lead' } } })
+  running.update({ byId: { lead: { running: false }, w1: { running: true, origin: 'subagent', parentId: 'lead' } } })
+  await settle()
+  assert.equal(running.plays.length, 0, '团队还在跑，Lead 让出不是“完成”')
+
+  running.update({ byId: { lead: { running: false }, w1: { running: false, origin: 'subagent', parentId: 'lead' } } })
+  await settle()
+  assert.equal(running.plays.length, 0, '子任务完成不应响')
+
+  const settled = loadClient({ muteSubagent: false }, [teamsSnapshot({ tasks: [teamTask('completed')] })])
+  await settle()
+  settled.update({ byId: { lead: { running: true } } })
+  settled.update({ byId: { lead: { running: false } } })
+  await settle()
+  assert.equal(settled.plays.length, 1, '全部收尾后 Lead 结束要响')
+})
+
+test('第三方 Agent Teams：staged（等审批）时照常提醒', async () => {
+  const harness = loadClient({ muteSubagent: false }, [
+    teamsSnapshot({ phase: 'staged', tasks: [teamTask('pending')] }),
+  ])
+  await settle()
+  harness.update({ byId: { lead: { running: true } } })
+  harness.update({ byId: { lead: { running: false } } })
+  await settle()
+  assert.equal(harness.plays.length, 1, '等审批是用户的回合，需要提醒')
+})
+
+test('团队停下来等用户审批（无进行中任务、无人运行）时仍会提醒', async () => {
+  const harness = loadClient({ muteSubagent: false })
+  await settle()
+
+  harness.update(teamSnapshot({ leadRunning: true, tasks: [teamTask('pending')] }))
+  harness.update(teamSnapshot({ leadRunning: false, tasks: [teamTask('pending')] }))
+  assert.equal(harness.plays.length, 1, '等审批是用户的回合，需要提醒')
 })
 
 test('enabled=false 时完全不播', async () => {
