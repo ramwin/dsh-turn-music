@@ -1,3 +1,6 @@
 node_modules/
 *.tgz
 .DS_Store
+# 全局 gitignore 常把 Python 的 lib/ 一起忽略；本仓 lib/ 是插件源码，必须跟踪。
+!lib/
+!lib/**
