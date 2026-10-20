@@ -21,6 +21,7 @@ Agent 跑长任务时你走开了，回来才发现它十分钟前就答完了�
 ## 特性
 
 - **回合结束自动响**：监听会话状态（`running` 由 true 变 false），不依赖模型自我提醒，也不占用 API 调用。
+- **提问/审批也提醒**：模型弹出选择题（`ask_user_question`）或等你点审批时，回合其实还在 `running`，单纯等回合结束会一直静默；插件同时监听 `uiSession.sessionStatus` 的 `pendingInteraction`，交互一出现就响。
 - **设置里开关**：`设置 → 内置插件 → 回合提醒音乐`，同一张卡片也出现在左侧**插件**面板里。
 - **自定义音乐**：填宿主机绝对路径（支持 `~`），或直接在卡片里**选文件上传**（远程访问也能用）。
 - **内置默认铃声**：随包分发的电话「叮铃铃」（6.5 秒，52 KB，纯合成、CC0，见 `scripts/make-ringtone.py`），装完即响，不需要准备任何音频。
@@ -66,6 +67,7 @@ dsh plugin --profile web add github:ramwin/dsh-turn-music
 | 最长响多久 | 120 秒 | 循环时的安全上限，0 = 不限 |
 | 只提醒当前会话 | 关 | 开：只对屏幕上正在看的会话响 |
 | 忽略子代理会话 | 开 | 子代理与团队子任务的回合结束不响（团队子任务始终静音） |
+| 提问/审批也提醒 | 开 | 模型弹出选择题或等你审批时播放（同一去重、onlyCurrent、子代理规则） |
 
 设置存在 `~/.dsh/turn-music.json`（全局，不分项目/会话）；上传的音频存在 `~/.dsh/turn-music/`；播放位置存在 `~/.dsh/turn-music-position.json`（按音频文件的 mtime 记账，换歌自动归零）。
 
@@ -84,6 +86,7 @@ dsh plugin --profile web add github:ramwin/dsh-turn-music
     maxSeconds: 120
     onlyCurrent: false
     muteSubagent: true
+    onQuestion: true
 ```
 
 ## 工作原理
@@ -99,11 +102,13 @@ POST /dsh-turn-music/config ────────────────►�
 POST /dsh-turn-music/upload ────────────────►└─ 存 ~/.dsh/turn-music/ringtone.*
 ```
 
-- **为什么触发在浏览器**：回合结束这个「边界」只有页面能看见（`sessions.list` 是客户端会话列表 store，每行带 `running`）；也只有页面能把声音放出来。宿主进程在服务器上，没有扬声器。
+- **为什么触发在浏览器**：回合结束、以及「正在等你回答/审批」这两个边界只有页面能看见——`sessions.list` 是客户端会话列表 store（`running` 由 true 变 false = 回合结束），`uiSession.sessionStatus` 的 `pendingInteraction` = 有提问或审批挂起（此时 `running` 仍是 true）；也只有页面能把声音放出来。宿主进程在服务器上，没有扬声器。
 - **为什么要宿主 half**：浏览器读不到宿主机的绝对路径。音频由宿主经 HTTP 流式下发（支持 `Range`），所以远程打开页面、甚至手机访问，都能播出本机上的那个文件。
-- **不回放历史**：页面打开时的第一份快照只做基线，已经在跑的会话不会因为刷新就误响。
+- **不回放历史**：页面打开时的第一份快照只做基线，已经在跑的会话、以及打开时已经挂着的提问都不会因为刷新就误响。
 
 ## 常见问题
+
+**选择题弹出来为什么不响？** 提问和审批发生在回合进行中（`running` 仍为 true），回合结束那条边沿等不到它们。插件为此单独监听 `uiSession.sessionStatus` 的 `pendingInteraction`：开关在设置里的「提问/审批也提醒」（默认开）。若关掉它、或默认「忽略子代理会话」（子代理的提问静音）、或开了「只提醒当前会话」而提问在别的会话，都不会响。
 
 **没声音？** 先看浮标：显示「浏览器拦截了自动播放」就点一下；否则检查设置里的音量与「启用」，以及文件路径是否还存在（宿主会自动回退到内置铃声）。
 

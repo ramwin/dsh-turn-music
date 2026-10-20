@@ -47,6 +47,12 @@ test('sanitize 保留 1% 步进的音量精度', () => {
   assert.equal(value.volume, 37)
 })
 
+test('sanitize 接受 onQuestion 开关（提问/审批提醒）', () => {
+  assert.equal(sanitize({ onQuestion: false }).value.onQuestion, false)
+  assert.equal(sanitize({ onQuestion: true }).value.onQuestion, true)
+  assert.deepEqual(sanitize({ onQuestion: 'yes' }).errors, ['onQuestion 必须是布尔值'])
+})
+
 test('resolveAudio 在自定义文件不可用时回退到内置铃声', () => {
   const fallback = resolveAudio({ file: '/definitely/missing.mp3' })
   assert.equal(fallback.source, 'bundled')

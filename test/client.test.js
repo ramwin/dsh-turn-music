@@ -83,8 +83,10 @@ function makeClock() {
  * @param overrides - host config the fake `/config` endpoint answers with.
  * @param teams - `@nanmicoder/dsh-agent-teams` snapshots, or null when that
  *   plugin (and therefore its state route) is absent.
+ * @param initialStatus - status entries already present when the page opens
+ *   (`uiSession.sessionStatus` baseline), as `[sessionId, value]` pairs.
  */
-function loadClient(overrides, teams = null) {
+function loadClient(overrides, teams = null, initialStatus = []) {
   const plays = []
   const pauses = []
   const audios = []
@@ -92,6 +94,8 @@ function loadClient(overrides, teams = null) {
   let captured = null
   let storeSubscribe = null
   let storeSnapshot = { byId: {} }
+  let statusSubscribe = null
+  let statusSnapshot = new Map(initialStatus)
   const effects = []
   const clock = makeClock()
 
@@ -146,9 +150,20 @@ function loadClient(overrides, teams = null) {
       }
     },
   }
+  /** Fake `uiSession.sessionStatus`: Map<sessionId, {running, pendingInteraction}>. */
+  const sessionStatus = {
+    getSnapshot: () => statusSnapshot,
+    subscribe(fn) {
+      statusSubscribe = fn
+      return () => {
+        statusSubscribe = null
+      }
+    },
+  }
   const ctx = {
     get(name) {
       if (name === 'sessions') return { list: sessionList }
+      if (name === 'uiSession') return { sessionStatus }
       return null
     },
     effect(fn) {
@@ -182,7 +197,7 @@ function loadClient(overrides, teams = null) {
       status: 200,
       json: async () => ({
         ok: true,
-        config: { enabled: true, file: '', volume: 70, loop: true, maxSeconds: 0, onlyCurrent: false, muteSubagent: true, ...overrides },
+        config: { enabled: true, file: '', volume: 70, loop: true, maxSeconds: 0, onlyCurrent: false, muteSubagent: true, onQuestion: true, ...overrides },
         audio: { source: 'bundled', name: 'ringtone.mp3', version: 1, url: '/dsh-turn-music/audio?v=1' },
       }),
     }
@@ -222,6 +237,11 @@ function loadClient(overrides, teams = null) {
     update(next) {
       storeSnapshot = next
       if (storeSubscribe) storeSubscribe()
+    },
+    /** Push a new uiSession.sessionStatus Map into the question watcher. */
+    updateStatus(entries) {
+      statusSnapshot = new Map(entries)
+      if (statusSubscribe) statusSubscribe()
     },
   }
 }
@@ -514,4 +534,64 @@ test('两秒内的重复触发被去重（多实例 watcher 不会连响两声�
   harness.update({ byId: { s1: { running: false }, s2: { running: true } } })
   harness.update({ byId: { s1: { running: false }, s2: { running: false } } })
   assert.equal(harness.plays.length, 1, 'DEDUPE 窗口内不应再响')
+})
+
+test('打开页面时已挂着的提问不响（baseline）', async () => {
+  const harness = loadClient({}, null, [['s1', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+  await settle()
+  assert.equal(harness.plays.length, 0, '基线快照不应播放')
+})
+
+test('提问/审批出现（pendingInteraction 边沿）触发播放，只在新的交互出现时响', async () => {
+  const harness = loadClient({})
+  await settle()
+  const realNow = Date.now
+  let fakeNow = realNow()
+  Date.now = () => fakeNow
+  try {
+    harness.update({ byId: { s1: { running: true } } })
+    // 回合仍在跑、没有待处理交互：不响
+    harness.updateStatus([['s1', { running: true }]])
+    assert.equal(harness.plays.length, 0)
+
+    // 提问出现（turn 没有结束）：响
+    harness.updateStatus([['s1', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+    assert.equal(harness.plays.length, 1, '提问出现应当播放一次')
+    assert.match(harness.plays[0].src, /\/dsh-turn-music\/audio/)
+
+    // 回答完毕，交互消失：不响
+    harness.updateStatus([['s1', { running: true, pendingInteraction: undefined }]])
+    assert.equal(harness.plays.length, 1, '交互消失不是提醒时机')
+
+    // 同一回合里又提了一个问题（跨过去重窗口）：再响
+    fakeNow += 5000
+    harness.updateStatus([['s1', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+    assert.equal(harness.plays.length, 2, '新的提问再次提醒')
+  } finally {
+    Date.now = realNow
+  }
+})
+
+test('onQuestion=false 时提问不响', async () => {
+  const harness = loadClient({ onQuestion: false })
+  await settle()
+  harness.update({ byId: { s1: { running: true } } })
+  harness.updateStatus([['s1', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+  assert.equal(harness.plays.length, 0)
+})
+
+test('提问提醒同样遵守 onlyCurrent 与子代理静音', async () => {
+  const current = loadClient({ onlyCurrent: true })
+  await settle()
+  current.update({ byId: { a: { running: true }, b: { running: true } }, current: 'a' })
+  current.updateStatus([['b', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+  assert.equal(current.plays.length, 0, '非当前会话的提问不响')
+  current.updateStatus([['a', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+  assert.equal(current.plays.length, 1, '当前会话的提问要响')
+
+  const sub = loadClient({})
+  await settle()
+  sub.update({ byId: { child: { running: true, origin: 'subagent' } } })
+  sub.updateStatus([['child', { running: true, pendingInteraction: { kind: 'question-reply' } }]])
+  assert.equal(sub.plays.length, 0, '子代理会话的提问默认静音')
 })
