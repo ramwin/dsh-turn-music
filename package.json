@@ -1,6 +1,6 @@
 {
   "name": "dsh-turn-music",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DeepSeek Harness 回合提醒音乐插件：对话（回合）结束时自动播放音乐提醒你回来，可在设置里开关、自定义音乐路径或上传音频，内置电话「叮铃铃」铃声；浮标可随时暂停。Turn-finished music reminder for DSH Web — enable in Settings, point at any local audio file or upload one, bundled telephone ringtone, pausable from an in-page chip.",
   "license": "MIT",
   "type": "module",

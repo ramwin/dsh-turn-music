@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
-import { homedir } from 'node:os'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { test } from 'node:test'
 
-import { expandPath, mediaTypeOf, resolveAudio, sanitize } from '../lib/index.js'
+import { expandPath, mediaTypeOf, positionFor, readPosition, resolveAudio, sanitize, writePosition } from '../lib/index.js'
 
 test('expandPath 展开 ~ 与绝对路径，空字符串表示"用默认铃声"', () => {
   assert.equal(expandPath(''), '')
@@ -58,4 +59,22 @@ test('mediaTypeOf 给出浏览器可解码的 MIME', () => {
   assert.equal(mediaTypeOf('/a/b.M4A'), 'audio/mp4')
   assert.equal(mediaTypeOf('/a/b.flac'), 'audio/flac')
   assert.equal(mediaTypeOf('/a/b.unknown'), 'application/octet-stream')
+})
+
+test('播放位置全局保存，并随音频版本（mtime）失效', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'turn-music-'))
+  const previous = process.env.DSH_HOME
+  process.env.DSH_HOME = dir
+  try {
+    assert.deepEqual(readPosition(), { version: 0, position: 0 }, '没有记录时从头开始')
+    writePosition({ version: 7, position: 42.5 })
+    assert.deepEqual(readPosition(), { version: 7, position: 42.5 })
+    assert.equal(positionFor({ version: 7 }), 42.5, '同一音频继续上次的位置')
+    assert.equal(positionFor({ version: 8 }), 0, '换了音频（mtime 变化）自动归零')
+    assert.equal(positionFor({ version: 7 }), 42.5, '读取本身不消耗位置')
+  } finally {
+    if (previous === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -448,6 +448,63 @@ test('onlyCurrent 只对当前会话响', async () => {
   assert.equal(harness.plays.length, 1, '当前会话结束要响')
 })
 
+test('下一回合从上次停止的位置继续（全局进度），而不是从头再响', async () => {
+  const harness = loadClient({})
+  await settle()
+  const realNow = Date.now
+  let fakeNow = realNow()
+  Date.now = () => fakeNow
+  try {
+    harness.update({ byId: { s1: { running: true } } })
+    harness.update({ byId: { s1: { running: false } } })
+    assert.equal(harness.plays.length, 1)
+    assert.equal(harness.plays[0].currentTime, 0, '第一次仍然从头开始')
+
+    const audio = harness.audios[0]
+    audio.currentTime = 4.2
+    // ✕ 关掉这一次：记下位置（渐弱结束后真正停下）
+    const close = harness.chip().children.find((child) => child.tagName === 'button' && child.textContent === '✕')
+    close.onclick()
+    harness.clock.advance(1100)
+    assert.equal(harness.pauses.length, 1, '渐弱结束后停下')
+    assert.equal(harness.pauses[0].currentTime, 4.2, '停在记住的位置，不回 0')
+    assert.equal(audio.currentTime, 4.2, '元素也停在记住的位置')
+
+    // 跨过去重窗口后新的回合结束：从 4.2 继续，而不是从头
+    fakeNow += 5000
+    harness.update({ byId: { s1: { running: true } } })
+    harness.update({ byId: { s1: { running: false } } })
+    assert.equal(harness.plays.length, 2)
+    assert.equal(harness.plays[1].currentTime, 4.2, '新回合从上次停止处继续')
+  } finally {
+    Date.now = realNow
+  }
+})
+
+test('正在响时新的回合结束不会从头，也不会跳走', async () => {
+  const harness = loadClient({})
+  await settle()
+  const realNow = Date.now
+  let fakeNow = realNow()
+  Date.now = () => fakeNow
+  try {
+    harness.update({ byId: { s1: { running: true } } })
+    harness.update({ byId: { s1: { running: false } } })
+    assert.equal(harness.plays.length, 1)
+
+    const audio = harness.audios[0]
+    audio.currentTime = 3.7
+    audio.paused = false
+    fakeNow += 5000
+    harness.update({ byId: { s1: { running: true } } })
+    harness.update({ byId: { s1: { running: false } } })
+    assert.equal(harness.plays.length, 2)
+    assert.equal(harness.plays[1].currentTime, 3.7, '还在响就保持现场位置')
+  } finally {
+    Date.now = realNow
+  }
+})
+
 test('两秒内的重复触发被去重（多实例 watcher 不会连响两声）', async () => {
   const harness = loadClient({})
   await settle()
