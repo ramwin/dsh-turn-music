@@ -6,7 +6,7 @@
  * The client bundle is loaded the way the shell loads it
  * (`window.__ModuleLoader__.load({factory})`) and then driven through a fake
  * `sessions.list` store, a fake `<audio>` element and a fake timer clock (so a
- * one-second fade costs no real time).
+ * multi-second fade costs no real time).
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -311,7 +311,7 @@ test('回合从 running 变成 false 时触发播放，baseline 不响', async (
   assert.equal(harness.plays[0].loop, true)
 })
 
-test('起播 1 秒渐强：从静音升到配置音量', async () => {
+test('起播 2.5 秒渐强：从静音升到配置音量', async () => {
   const harness = loadClient({})
   await settle()
   harness.update({ byId: { s1: { running: true } } })
@@ -319,18 +319,18 @@ test('起播 1 秒渐强：从静音升到配置音量', async () => {
 
   const audio = harness.audios[0]
   assert.equal(audio.volume, 0, '起播从静音开始，不突然炸响')
-  harness.clock.advance(500)
+  harness.clock.advance(1250)
   assert.ok(audio.volume > 0.2 && audio.volume < 0.5, `半程应在渐强中间，实际 ${audio.volume}`)
-  harness.clock.advance(600)
-  assert.equal(audio.volume, 0.7, '一秒后到达配置音量')
+  harness.clock.advance(1300)
+  assert.equal(audio.volume, 0.7, '2.5 秒后到达配置音量')
 })
 
-test('暂停 1 秒渐弱后停下，并记住位置；继续从暂停处播放', async () => {
+test('暂停 2.5 秒渐弱后停下，并记住位置；继续从暂停处播放', async () => {
   const harness = loadClient({})
   await settle()
   harness.update({ byId: { s1: { running: true } } })
   harness.update({ byId: { s1: { running: false } } })
-  harness.clock.advance(1100)
+  harness.clock.advance(2600)
 
   const audio = harness.audios[0]
   assert.equal(audio.volume, 0.7)
@@ -341,14 +341,14 @@ test('暂停 1 秒渐弱后停下，并记住位置；继续从暂停处播放',
   assert.equal(harness.pauses.length, 0, '渐弱期间不应立刻硬切')
   assert.equal(harness.chip().children[1].textContent, '已暂停')
 
-  harness.clock.advance(1100)
+  harness.clock.advance(2600)
   assert.equal(harness.pauses.length, 1, '渐弱结束后才真正暂停')
   assert.equal(audio.volume, 0)
 
   toggle.onclick()
   assert.equal(harness.plays.length, 2)
   assert.equal(harness.plays[1].currentTime, 4.2, '从暂停的位置继续')
-  harness.clock.advance(1100)
+  harness.clock.advance(2600)
   assert.equal(audio.volume, 0.7, '继续时同样渐强')
 })
 
@@ -485,7 +485,7 @@ test('下一回合从上次停止的位置继续（全局进度），而不是�
     // ✕ 关掉这一次：记下位置（渐弱结束后真正停下）
     const close = harness.chip().children.find((child) => child.tagName === 'button' && child.textContent === '✕')
     close.onclick()
-    harness.clock.advance(1100)
+    harness.clock.advance(2600)
     assert.equal(harness.pauses.length, 1, '渐弱结束后停下')
     assert.equal(harness.pauses[0].currentTime, 4.2, '停在记住的位置，不回 0')
     assert.equal(audio.currentTime, 4.2, '元素也停在记住的位置')
