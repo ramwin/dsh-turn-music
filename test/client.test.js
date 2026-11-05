@@ -311,7 +311,7 @@ test('回合从 running 变成 false 时触发播放，baseline 不响', async (
   assert.equal(harness.plays[0].loop, true)
 })
 
-test('起播 2.5 秒渐强：从静音升到配置音量', async () => {
+test('起播 2.5 秒渐强：从静音升到配置音量，且按听感曲线（半程约 1/4 音量）', async () => {
   const harness = loadClient({})
   await settle()
   harness.update({ byId: { s1: { running: true } } })
@@ -319,8 +319,12 @@ test('起播 2.5 秒渐强：从静音升到配置音量', async () => {
 
   const audio = harness.audios[0]
   assert.equal(audio.volume, 0, '起播从静音开始，不突然炸响')
-  harness.clock.advance(1250)
-  assert.ok(audio.volume > 0.2 && audio.volume < 0.5, `半程应在渐强中间，实际 ${audio.volume}`)
+  harness.clock.advance(625)
+  // p = 0.25 → 0.7 * 0.25² = 0.044：开头足够轻，不会「一响就到顶」
+  assert.ok(audio.volume > 0.02 && audio.volume < 0.08, `1/4 程应很轻，实际 ${audio.volume}`)
+  harness.clock.advance(625)
+  // p = 0.5 → 0.7 * 0.5² = 0.175：比线性小，听感上才是半程
+  assert.ok(audio.volume > 0.12 && audio.volume < 0.23, `半程应约 1/4 音量，实际 ${audio.volume}`)
   harness.clock.advance(1300)
   assert.equal(audio.volume, 0.7, '2.5 秒后到达配置音量')
 })
@@ -341,7 +345,10 @@ test('暂停 2.5 秒渐弱后停下，并记住位置；继续从暂停处播放
   assert.equal(harness.pauses.length, 0, '渐弱期间不应立刻硬切')
   assert.equal(harness.chip().children[1].textContent, '已暂停')
 
-  harness.clock.advance(2600)
+  harness.clock.advance(1300)
+  // 渐弱同样走听感曲线：半程约剩 1/4 音量，而不是线性的一半
+  assert.ok(audio.volume > 0.12 && audio.volume < 0.23, `渐弱半程应约 1/4 音量，实际 ${audio.volume}`)
+  harness.clock.advance(1300)
   assert.equal(harness.pauses.length, 1, '渐弱结束后才真正暂停')
   assert.equal(audio.volume, 0)
 
