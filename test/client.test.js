@@ -24,8 +24,18 @@ function fakeElement(tag) {
     children: [],
     textContent: '',
     attributes: {},
+    offsetWidth: 150,
+    offsetHeight: 40,
     setAttribute(name, value) {
       this.attributes[name] = String(value)
+    },
+    getBoundingClientRect() {
+      return {
+        left: Number.parseFloat(this.style.left) || 0,
+        top: Number.parseFloat(this.style.top) || 0,
+        width: this.offsetWidth,
+        height: this.offsetHeight,
+      }
     },
     appendChild(child) {
       this.children.push(child)
@@ -85,12 +95,14 @@ function makeClock() {
  *   plugin (and therefore its state route) is absent.
  * @param initialStatus - status entries already present when the page opens
  *   (`uiSession.sessionStatus` baseline), as `[sessionId, value]` pairs.
+ * @param seedStorage - `[key, value]` pairs preloaded into `localStorage`.
  */
-function loadClient(overrides, teams = null, initialStatus = []) {
+function loadClient(overrides, teams = null, initialStatus = [], seedStorage = []) {
   const plays = []
   const pauses = []
   const audios = []
   const managed = []
+  const storage = new Map(seedStorage)
   let captured = null
   let storeSubscribe = null
   let storeSnapshot = { byId: {} }
@@ -124,6 +136,18 @@ function loadClient(overrides, teams = null, initialStatus = []) {
   }
 
   const window = {
+    innerWidth: 800,
+    innerHeight: 600,
+    localStorage: {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, String(value))
+      },
+    },
+    addEventListener() {},
+    removeEventListener() {},
     __ModuleLoader__: {
       load(spec) {
         captured = spec
@@ -229,6 +253,7 @@ function loadClient(overrides, teams = null, initialStatus = []) {
     audios,
     effects,
     clock,
+    storage,
     /** The reminder chip, once `apply()` created it. */
     chip() {
       return managed.find((element) => element.attributes['data-dsh-turn-music-chip'] !== undefined) || null
@@ -357,6 +382,51 @@ test('暂停 2.5 秒渐弱后停下，并记住位置；继续从暂停处播放
   assert.equal(harness.plays[1].currentTime, 4.2, '从暂停的位置继续')
   harness.clock.advance(2600)
   assert.equal(audio.volume, 0.7, '继续时同样渐强')
+})
+
+test('浮标可拖动：记住位置，轻点按钮不触发拖动', async () => {
+  const harness = loadClient({})
+  await settle()
+  harness.update({ byId: { s1: { running: true } } })
+  harness.update({ byId: { s1: { running: false } } })
+  const chip = harness.chip()
+  assert.equal(chip.style.right, '18px', '默认停在右下角')
+  assert.equal(chip.style.bottom, '18px')
+
+  // 轻点（没有位移）不算拖动，也不写存储
+  chip.onpointerdown({ pointerId: 1, isPrimary: true, pointerType: 'touch', button: 0, clientX: 100, clientY: 100 })
+  chip.onpointerup({ pointerId: 1, clientX: 101, clientY: 101 })
+  assert.equal(harness.storage.get('dsh-turn-music:chip-position'), undefined, '轻点不保存位置')
+
+  // 拖动 60/30：位置落到 left/top，并写入 localStorage
+  chip.onpointerdown({ pointerId: 2, isPrimary: true, pointerType: 'touch', button: 0, clientX: 100, clientY: 100 })
+  chip.onpointermove({ pointerId: 2, clientX: 160, clientY: 130, cancelable: true, preventDefault() {} })
+  chip.onpointerup({ pointerId: 2, clientX: 160, clientY: 130 })
+  assert.equal(chip.style.right, 'auto')
+  assert.equal(chip.style.left, '60px')
+  assert.equal(chip.style.top, '30px')
+  assert.equal(harness.storage.get('dsh-turn-music:chip-position'), '{"left":60,"top":30}')
+
+  // 拖动后浏览器补发的 click 要被吞掉，不能误触「暂停」
+  let prevented = false
+  chip.onclick({
+    preventDefault() {
+      prevented = true
+    },
+    stopPropagation() {},
+  })
+  assert.equal(prevented, true, '拖动后的 click 不应落到按钮上')
+})
+
+test('拖过的位置在下次打开时还原', async () => {
+  const harness = loadClient({}, null, [], [['dsh-turn-music:chip-position', '{"left":60,"top":30}']])
+  await settle()
+  harness.update({ byId: { s1: { running: true } } })
+  harness.update({ byId: { s1: { running: false } } })
+  const chip = harness.chip()
+  assert.equal(chip.style.left, '60px')
+  assert.equal(chip.style.top, '30px')
+  assert.equal(chip.style.right, 'auto')
 })
 
 test('子代理会话默认静音，父会话照常响', async () => {
